@@ -1,0 +1,1 @@
+{"rsync":{"/vagrant_shared":{"create":true,"guestpath":"/vagrant_shared","hostpath":"/home/mcauchy/iot/IoT/p1/shared","disabled":false,"__vagrantfile":true,"owner":"vagrant","group":"vagrant"}}}
