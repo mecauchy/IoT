@@ -1,0 +1,24 @@
+# --- Vagrant ---
+.vagrant/
+*.log
+
+# --- Système (Mac/Linux/Windows) ---
+.DS_Store
+Thumbs.db
+*~
+
+# --- IDE (Configuration de ton éditeur de code) ---
+.vscode/
+.idea/
+
+# --- Virtualisation (au cas où) ---
+*.vdi
+*.vbox
+iso/
+
+# --- Kubernetes / Sécurité ---
+*.key
+*.pem
+*.crt
+kubeconfig
+config
