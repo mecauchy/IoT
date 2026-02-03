@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-one-deployment
+  labels:
+    app: app-one
+# definition du pod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app-one
+  template:
+    metadata:
+      labels:
+        app: app-one
+# definition du replicaset
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+#  definition du pod
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-one
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: app-one

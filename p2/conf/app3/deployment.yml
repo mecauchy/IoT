@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-three-deployment
+  labels:
+    app: app-three
+# definition du pod
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: app-three
+  template:
+    metadata:
+      labels:
+        app: app-three
+# definition du replicaset
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+#  definition du pod
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-three
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: app-three

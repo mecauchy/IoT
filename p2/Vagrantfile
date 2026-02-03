@@ -1,0 +1,29 @@
+SERVER_NAME = "mcauchyS"
+SERVER_IP = "192.168.56.110"
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "generic/ubuntu2204"
+  config.vm.boot_timeout = 600     # 10 minutes timeout for nested virtualization
+  config.vm.box_check_update = false
+
+  config.vm.synced_folder ".", "/vagrant", type: "rsync"
+
+  # Shared folder for token exchange between server and worker
+  config.vm.synced_folder "./shared", "/vagrant_shared", create: true
+
+  # Server (Controller) configuration
+  config.vm.define SERVER_NAME do |server|
+    server.vm.hostname = SERVER_NAME
+    server.vm.network "private_network", ip: SERVER_IP
+
+    server.vm.provider "libvirt" do |lv|
+      lv.memory = "1024"
+      lv.cpus = 1
+    end
+
+    server.vm.provision "shell", path: "script/server.sh", 
+      env: {
+        "SERVER_IP" => SERVER_IP
+      }
+  end
+end
