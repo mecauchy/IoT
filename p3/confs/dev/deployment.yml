@@ -5,7 +5,7 @@ metadata:
   namespace: dev
 # definition du pod
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: playground
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: playground
-        image: wil42/playground:v2
+        image: wil42/playground:v1
         ports:
         - containerPort: 8888
 #  definition du pod
