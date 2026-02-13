@@ -1,24 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: app-two-deployment
-  labels:
-    app: app-two
+  name: app-deployment
+  namespace: dev
 # definition du pod
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: app-two
+      app: playground
   template:
     metadata:
       labels:
-        app: app-two
+        app: playground
 # definition du replicaset
     spec:
       containers:
-      - name: nginx
-        image: nginx:latest
+      - name: playground
+        image: will42/playground:v1
         ports:
-        - containerPort: 80
+        - containerPort: 8888
 #  definition du pod
