@@ -36,7 +36,7 @@ else
 fi
 
 # Installation de Kubectl
-ifmmand -v kubectl &> /dev/null; then
+if command -v kubectl &> /dev/null; then
     echo -e "${GREEN}[OK] Kubectl est déjà installé. Étape ignorée.${NC}"
 else
     echo -e "${BLUE}[ACTION] Installation de Kubectl...${NC}"
@@ -84,5 +84,17 @@ else
     kubectl create namespace dev
 fi
 
+# Configuration argo Cd
 echo -e "\n${GREEN}[SUCCÈS] Script terminé !${NC}"
 echo -e "${YELLOW}[IMPORTANT] Déconnectez-vous et reconnectez-vous, ou tapez 'su - \$USER' pour appliquer les droits Docker et l'alias 'k'.${NC}"
+
+if kubectl get deployment argocd-server -n argocd &> /dev/null; then
+    echo -e "${GREEN}[OK] Argo CD est déjà installé.${NC}"
+else
+    echo -e "${BLUE}[ACTION] Installation d'Argo CD...${NC}"
+    kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+    
+    echo -e "${YELLOW}[ATTENTE] Démarrage des pods Argo CD (cela peut prendre 1 à 2 minutes)...${NC}"
+    # Cette ligne met le script en pause jusqu'à ce que le serveur ArgoCD soit prêt
+    kubectl wait --for=condition=Available deployment/argocd-server -n argocd --timeout=300s
+fi
