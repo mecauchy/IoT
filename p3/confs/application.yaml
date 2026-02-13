@@ -8,7 +8,7 @@ spec:
   source:
     repoURL: https://github.com/mecauchy/IoT.git
     targetRevision: HEAD
-    path: .
+    path: p3/confs
   destination:
     server: https://kubernetes.default.svc
     namespace: dev
