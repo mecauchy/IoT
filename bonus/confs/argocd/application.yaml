@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: project-mcauchy
+  namespace: argocd
+spec:
+  project: default
+  source:
+    # repoURL: https://github.com/mecauchy/IoT.git ----> remplacer avec repo gitlab
+    targetRevision: HEAD
+    path: p3/confs/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
