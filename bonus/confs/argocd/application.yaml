@@ -6,9 +6,9 @@ metadata:
 spec:
   project: default
   source:
-    # repoURL: https://github.com/mecauchy/IoT.git ----> remplacer avec repo gitlab
+    repoURL: https://gitlab.com/mcauchy/inception-of-things.git
     targetRevision: HEAD
-    path: p3/confs/dev
+    path: bonus/confs/dev
   destination:
     server: https://kubernetes.default.svc
     namespace: dev

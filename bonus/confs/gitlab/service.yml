@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitlab-service
+  namespace: gitlab
+spec:
+  type: loadBalancer
+  selector:
+    app: gitlab
+  ports:
+  - port: 3000
+    targetPort: 3000

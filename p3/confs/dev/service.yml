@@ -16,7 +16,7 @@ spec:
 #  Le loadBalancer permet d'exposer l'IP a l'exterieur
 #  Le Service va chercher tous les Pods avec l'etiquette app:playgroud
 #  port: '' -> port sur lequel le service ecoute
-#  targerPort: '' -> Port sur lequel il envoi le traffic (celui du container)
+#  targetPort: '' -> Port sur lequel il envoi le traffic (celui du container)
 
 #  Questions : 
 #  a quoi sert un namespace ?
