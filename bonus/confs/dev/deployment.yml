@@ -3,7 +3,6 @@ kind: Deployment
 metadata:
   name: app-deployment
   namespace: dev
-# definition du pod
 spec:
   replicas: 1
   selector:
@@ -13,11 +12,9 @@ spec:
     metadata:
       labels:
         app: playground
-# definition du replicaset
     spec:
       containers:
       - name: playground
         image: wil42/playground:v1
         ports:
         - containerPort: 8888
-#  definition du pod

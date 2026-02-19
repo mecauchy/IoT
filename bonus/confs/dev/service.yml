@@ -4,19 +4,11 @@ metadata:
   name: app-service
   namespace: dev
 spec:
-  type: LoadBalancer
+  type: NodePort
   selector:
     app: playground
   ports:
   - name: http
     port: 8888
     targetPort: 8888
-
-#  Doit etre dans le meme namespace que le Deployment
-#  Le loadBalancer permet d'exposer l'IP a l'exterieur
-#  Le Service va chercher tous les Pods avec l'etiquette app:playgroud
-#  port: '' -> port sur lequel le service ecoute
-#  targetPort: '' -> Port sur lequel il envoi le traffic (celui du container)
-
-#  Questions : 
-#  a quoi sert un namespace ?
+    nodePort: 30888

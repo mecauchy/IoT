@@ -1,0 +1,60 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# ============================================================================
+# Inception of Things - Bonus Part
+# Architecture: 2 VMs
+#   VM1 (platform-vm) : k3s cluster + Argo CD + workloads
+#   VM2 (gitlab-vm)   : GitLab CE (apt install) + GitLab Runner
+# ============================================================================
+
+GITLAB_IP   = "192.168.56.10"
+PLATFORM_IP = "192.168.56.20"
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "generic/ubuntu2204"
+  config.vm.box_check_update = false
+  config.vm.boot_timeout = 600
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  # --------------------------------------------------------------------------
+  # VM2: GitLab (provisioned first so it's ready when platform-vm needs it)
+  # --------------------------------------------------------------------------
+  config.vm.define "gitlab-vm" do |gitlab|
+    gitlab.vm.hostname = "mcauchyG"
+    gitlab.vm.network "private_network", ip: GITLAB_IP
+
+    gitlab.vm.provider "libvirt" do |lv|
+      lv.memory = 4096
+      lv.cpus   = 4
+    end
+
+    gitlab.vm.provision "shell",
+      path: "scripts/gitlab/provision.sh",
+      env: {
+        "GITLAB_IP" => GITLAB_IP
+      }
+  end
+
+  # --------------------------------------------------------------------------
+  # VM1: Platform (k3s + Argo CD + dev workloads)
+  # --------------------------------------------------------------------------
+  config.vm.define "platform-vm" do |platform|
+    platform.vm.hostname = "mcauchyP"
+    platform.vm.network "private_network", ip: PLATFORM_IP
+
+    platform.vm.provider "libvirt" do |lv|
+      lv.memory = 2048
+      lv.cpus   = 2
+    end
+
+    platform.vm.synced_folder "confs/", "/home/vagrant/confs", type: "rsync"
+
+    platform.vm.provision "shell",
+      path: "scripts/platform/provision.sh",
+      env: {
+        "GITLAB_IP"   => GITLAB_IP,
+        "PLATFORM_IP" => PLATFORM_IP
+      }
+  end
+end

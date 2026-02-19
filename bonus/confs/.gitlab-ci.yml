@@ -1,0 +1,49 @@
+# ============================================================================
+# .gitlab-ci.yml — Example CI pipeline for GitOps with Argo CD
+# Place this file at the root of the iot-manifests GitLab repository (VM2)
+#
+# Workflow:
+#   1. Developer modifies confs/dev/deployment.yml (e.g. image tag change)
+#   2. Commit + push to main
+#   3. Pipeline validates manifests
+#   4. Argo CD (VM1) auto-syncs the new state to the dev namespace
+# ============================================================================
+
+stages:
+  - validate
+  - notify
+
+# --------------------------------------------------------------------------
+# Stage 1: Validate Kubernetes manifests with dry-run
+# --------------------------------------------------------------------------
+validate_manifests:
+  stage: validate
+  image: bitnami/kubectl:latest
+  script:
+    - echo "Validating Kubernetes manifests..."
+    - kubectl apply --dry-run=client -f confs/dev/deployment.yml
+    - kubectl apply --dry-run=client -f confs/dev/service.yml
+    - echo "All manifests are valid!"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      changes:
+        - confs/dev/**/*
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+# --------------------------------------------------------------------------
+# Stage 2: Notify that Argo CD will pick up changes
+# --------------------------------------------------------------------------
+notify_argocd:
+  stage: notify
+  image: curlimages/curl:latest
+  script:
+    - echo "Manifests have been updated on branch ${CI_COMMIT_BRANCH}."
+    - echo "Argo CD is configured with automated sync policy."
+    - echo "Changes will be deployed to the 'dev' namespace automatically."
+    - echo ""
+    - echo "To force immediate sync:"
+    - echo "  argocd app sync project-mcauchy --server <ARGOCD_SERVER>"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - confs/dev/**/*

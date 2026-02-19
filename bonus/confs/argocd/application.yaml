@@ -6,9 +6,10 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://gitlab.com/mcauchy/inception-of-things.git
-    targetRevision: HEAD
-    path: bonus/confs/dev
+    # GitLab self-hosted on VM2 (gitlab-vm)
+    repoURL: http://192.168.56.10/root/iot-manifests.git
+    targetRevision: main
+    path: confs/dev
   destination:
     server: https://kubernetes.default.svc
     namespace: dev
