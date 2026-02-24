@@ -108,12 +108,12 @@ make port-forward-gitlab
 
 **GitLab UI**: http://gitlab.localhost:8181
 - Username: `root`
-- Password: `iotBonus2024!`
+- Password: `iotBonus123!`
 
 ### Step 4: Create GitLab Repository
 
 1. Open http://gitlab.localhost:8181
-2. Login with `root` / `iotBonus2024!`
+2. Login with `root` / `iotBonus123!`
 3. Create new project: `iot-app`
 4. Make it public (or create access token)
 

@@ -108,7 +108,7 @@ argocd-password:
 
 ## gitlab-password: Get GitLab root password
 gitlab-password:
-	@echo "GitLab Root Password: iotBonus2024!"
+	@echo "GitLab Root Password: iotBonus123!"
 
 ## port-forward-gitlab: Forward GitLab port for browser access
 port-forward-gitlab:

@@ -48,7 +48,7 @@ create_gitlab_secret() {
     log_info "Creating GitLab root password secret..."
     
     # Generate or use fixed password for reproducibility
-    GITLAB_ROOT_PASSWORD="iotBonus2024!"
+    GITLAB_ROOT_PASSWORD="iotBonus123!"
     
     # Create secret if it doesn't exist
     if kubectl -n gitlab get secret gitlab-initial-root-password &>/dev/null; then
@@ -146,7 +146,7 @@ print_access_info() {
     echo "            kubectl port-forward svc/gitlab-webservice-default 8181:8181 -n gitlab"
     echo ""
     echo "  Username: root"
-    echo "  Password: iotBonus2024!"
+    echo "  Password: iotBonus123!"
     echo ""
     echo "Next steps:"
     echo "  1. Access GitLab and create a new project 'iot-app'"
