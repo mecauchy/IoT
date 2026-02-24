@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ============================================================================
-# VM2 — GitLab CE + GitLab Runner provision script
-# Installs GitLab via official apt repository (package method)
-# Data persists on the VM disk: /var/opt/gitlab, /etc/gitlab
+# VM2 — GitLab CE + GitLab Runner provision script  (idempotent)
+# Installs GitLab, creates the iot-manifests repo, and pushes initial
+# manifests so that Argo CD on the platform-vm can sync immediately.
 # ============================================================================
 set -euo pipefail
 
@@ -19,15 +19,32 @@ log_err()  { echo -e "${RED}[ERROR]${NC} $*"; }
 
 GITLAB_IP="${GITLAB_IP:-192.168.56.10}"
 EXTERNAL_URL="http://${GITLAB_IP}"
+# Deterministic password — makes re-provisioning idempotent
+ROOT_PASSWORD="Passw0rd!"
+TOKEN_NAME="vagrant-provision"
+PROJECT_NAME="iot-manifests"
+
+retry() {
+  local attempts="$1"; shift
+  local sleep_s="$1"; shift
+  local n=1
+  until "$@"; do
+    if [ "$n" -ge "$attempts" ]; then return 1; fi
+    n=$((n + 1))
+    sleep "$sleep_s"
+  done
+}
 
 # ============================================================================
 # 1. System packages
 # ============================================================================
 log_info "Updating system packages..."
 export DEBIAN_FRONTEND=noninteractive
+dpkg --configure -a 2>/dev/null || true
+apt-get install -f -yq 2>/dev/null || true
 apt-get update -yq
 apt-get install -yq curl ca-certificates tzdata perl openssh-server \
-  postfix apt-transport-https gnupg2
+  postfix apt-transport-https gnupg2 git
 
 # ============================================================================
 # 2. Install GitLab CE
@@ -43,62 +60,129 @@ else
 fi
 
 # ============================================================================
-# 3. Configure GitLab
+# 3. Configure GitLab  (idempotent — always re-apply)
 # ============================================================================
 log_info "Configuring GitLab (external_url = ${EXTERNAL_URL})..."
 
-# Ensure external_url is set correctly
 sed -i "s|^external_url.*|external_url '${EXTERNAL_URL}'|" /etc/gitlab/gitlab.rb
 
-# Reduce memory footprint for a VM lab environment
-grep -q "puma\['worker_processes'\]" /etc/gitlab/gitlab.rb && \
-  sed -i "s|^.*puma\['worker_processes'\].*|puma['worker_processes'] = 2|" /etc/gitlab/gitlab.rb || \
-  echo "puma['worker_processes'] = 2" >> /etc/gitlab/gitlab.rb
+# Reduce memory footprint for a lab VM
+for setting in \
+  "puma['worker_processes'] = 2" \
+  "sidekiq['concurrency'] = 5" \
+  "postgresql['shared_buffers'] = \"256MB\"" \
+; do
+  key="${setting%%=*}"
+  key="${key// /}"  # strip spaces for grep
+  grep -q "${key}" /etc/gitlab/gitlab.rb \
+    && sed -i "s|^.*${key}.*|${setting}|" /etc/gitlab/gitlab.rb \
+    || echo "${setting}" >> /etc/gitlab/gitlab.rb
+done
 
-grep -q "sidekiq\['concurrency'\]" /etc/gitlab/gitlab.rb && \
-  sed -i "s|^.*sidekiq\['concurrency'\].*|sidekiq['concurrency'] = 5|" /etc/gitlab/gitlab.rb || \
-  echo "sidekiq['concurrency'] = 5" >> /etc/gitlab/gitlab.rb
-
-grep -q "postgresql\['shared_buffers'\]" /etc/gitlab/gitlab.rb && \
-  sed -i "s|^.*postgresql\['shared_buffers'\].*|postgresql['shared_buffers'] = \"256MB\"|" /etc/gitlab/gitlab.rb || \
-  echo "postgresql['shared_buffers'] = \"256MB\"" >> /etc/gitlab/gitlab.rb
-
-# Apply configuration
 gitlab-ctl reconfigure
 
 # ============================================================================
 # 4. Wait for GitLab to be fully ready
 # ============================================================================
 log_wait "Waiting for GitLab to start (this may take a few minutes)..."
-MAX_RETRIES=60
-RETRY=0
-until curl -sf "${EXTERNAL_URL}/-/readiness" &>/dev/null || [ $RETRY -ge $MAX_RETRIES ]; do
-  sleep 10
-  RETRY=$((RETRY + 1))
-  echo -ne "  Attempt ${RETRY}/${MAX_RETRIES}...\r"
-done
+retry 90 10 curl -sf "${EXTERNAL_URL}/-/health" -o /dev/null \
+  || { log_err "GitLab did not become healthy."; gitlab-ctl status; exit 1; }
+log_ok "GitLab is healthy at ${EXTERNAL_URL}"
 
-if [ $RETRY -ge $MAX_RETRIES ]; then
-  log_err "GitLab did not become ready in time. Check 'gitlab-ctl status'."
+# ============================================================================
+# 5. Set deterministic root password (idempotent via gitlab-rails)
+# ============================================================================
+log_info "Setting root password..."
+gitlab-rails runner "
+  u = User.find_by_username('root')
+  u.password = '${ROOT_PASSWORD}'
+  u.password_confirmation = '${ROOT_PASSWORD}'
+  u.save!
+  puts 'Root password updated.'
+" 2>/dev/null || log_info "Password was already set (OK)."
+echo "${ROOT_PASSWORD}" > /home/vagrant/gitlab_root_password.txt
+chown vagrant:vagrant /home/vagrant/gitlab_root_password.txt
+log_ok "Root password: ${ROOT_PASSWORD}"
+
+# ============================================================================
+# 6. Create a Personal Access Token (idempotent)
+# ============================================================================
+log_info "Creating Personal Access Token '${TOKEN_NAME}'..."
+PAT=$(gitlab-rails runner "
+  u = User.find_by_username('root')
+  t = u.personal_access_tokens.find_by(name: '${TOKEN_NAME}')
+  if t && !t.revoked? && !t.expired?
+    puts t.token
+  else
+    t&.revoke!
+    nt = u.personal_access_tokens.create!(
+      name: '${TOKEN_NAME}',
+      scopes: [:api, :write_repository, :read_repository],
+      expires_at: 1.year.from_now
+    )
+    puts nt.token
+  end
+" 2>/dev/null)
+
+if [ -z "${PAT}" ]; then
+  log_err "Failed to obtain a Personal Access Token."
+  exit 1
+fi
+echo "${PAT}" > /home/vagrant/gitlab_pat.txt
+chown vagrant:vagrant /home/vagrant/gitlab_pat.txt
+log_ok "PAT saved to /home/vagrant/gitlab_pat.txt"
+
+# ============================================================================
+# 7. Create project root/iot-manifests (idempotent via API)
+# ============================================================================
+log_info "Ensuring project root/${PROJECT_NAME} exists..."
+HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" \
+  -H "PRIVATE-TOKEN: ${PAT}" \
+  "${EXTERNAL_URL}/api/v4/projects/root%2F${PROJECT_NAME}" 2>/dev/null || true)
+
+if [ "${HTTP_CODE}" = "200" ]; then
+  log_ok "Project root/${PROJECT_NAME} already exists."
 else
-  log_ok "GitLab is up and running at ${EXTERNAL_URL}"
+  log_info "Creating project root/${PROJECT_NAME}..."
+  curl -sf -X POST "${EXTERNAL_URL}/api/v4/projects" \
+    -H "PRIVATE-TOKEN: ${PAT}" \
+    -d "name=${PROJECT_NAME}&visibility=public&initialize_with_readme=true" \
+    -o /dev/null
+  log_ok "Project created."
+  # Wait for the repo to be ready
+  sleep 5
 fi
 
 # ============================================================================
-# 5. Retrieve initial root password
+# 8. Push manifests into the repo  (idempotent — force-push)
 # ============================================================================
-if [ -f /etc/gitlab/initial_root_password ]; then
-  ROOT_PASSWORD=$(grep 'Password:' /etc/gitlab/initial_root_password | awk '{print $2}')
-  log_ok "GitLab initial root password: ${ROOT_PASSWORD}"
-  echo "${ROOT_PASSWORD}" > /home/vagrant/gitlab_root_password.txt
-  chown vagrant:vagrant /home/vagrant/gitlab_root_password.txt
-  log_info "Password saved to /home/vagrant/gitlab_root_password.txt"
-else
-  log_info "Initial root password file not found (already consumed or custom password set)."
+log_info "Pushing manifests to root/${PROJECT_NAME}..."
+REPO_DIR=$(mktemp -d)
+cd "${REPO_DIR}"
+git init -b main
+git config user.email "vagrant@provision"
+git config user.name  "Vagrant Provision"
+
+# Copy manifest tree
+mkdir -p confs/dev
+cp /home/vagrant/confs/dev/deployment.yml confs/dev/
+cp /home/vagrant/confs/dev/service.yml    confs/dev/
+if [ -f /home/vagrant/confs/.gitlab-ci.yml ]; then
+  cp /home/vagrant/confs/.gitlab-ci.yml .gitlab-ci.yml
 fi
 
+git add -A
+git commit -m "Initial manifests (provisioned by Vagrant)" --allow-empty
+
+git remote add origin "http://root:${PAT}@${GITLAB_IP}/${PROJECT_NAME}.git" 2>/dev/null \
+  || git remote set-url origin "http://root:${PAT}@${GITLAB_IP}/${PROJECT_NAME}.git"
+git push -u origin main --force
+cd /
+rm -rf "${REPO_DIR}"
+log_ok "Manifests pushed to ${EXTERNAL_URL}/root/${PROJECT_NAME}"
+
 # ============================================================================
-# 6. Install GitLab Runner
+# 9. Install GitLab Runner
 # ============================================================================
 if command -v gitlab-runner &>/dev/null; then
   log_ok "GitLab Runner is already installed."
@@ -118,13 +202,7 @@ echo -e "${GREEN} GitLab VM provisioning complete!${NC}"
 echo -e "${GREEN}================================================================${NC}"
 echo -e " GitLab URL:      ${EXTERNAL_URL}"
 echo -e " Username:        root"
-if [ -f /home/vagrant/gitlab_root_password.txt ]; then
-  echo -e " Password:        $(cat /home/vagrant/gitlab_root_password.txt)"
-fi
-echo -e ""
-echo -e " Next steps:"
-echo -e "   1. Log in to GitLab at ${EXTERNAL_URL}"
-echo -e "   2. Create a project (e.g. root/iot-manifests)"
-echo -e "   3. Push your manifests from your local machine"
-echo -e "   4. Configure Argo CD on platform-vm to point to this repo"
+echo -e " Password:        ${ROOT_PASSWORD}"
+echo -e " PAT:             ${PAT:0:15}..."
+echo -e " Project:         ${EXTERNAL_URL}/root/${PROJECT_NAME}"
 echo -e "${GREEN}================================================================${NC}"

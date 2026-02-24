@@ -3,52 +3,100 @@
 
 # ============================================================================
 # Inception of Things - Bonus Part
-# Architecture: 2 VMs
-#   VM1 (platform-vm) : k3s cluster + Argo CD + workloads
-#   VM2 (gitlab-vm)   : GitLab CE (apt install) + GitLab Runner
+# ============================================================================
+# Architecture: 2 nested VirtualBox VMs
+#   gitlab-vm   : GitLab CE + GitLab Runner    (heavy workload)
+#   platform-vm : k3s + Argo CD + dev namespace (lighter workload)
+#
+# Designed for nested virtualization (VirtualBox running inside a host VM).
+# To avoid "Guru Meditation" errors, the outer hypervisor MUST expose
+# VT-x/AMD-V to this machine (nested-hw-virt).  The settings below use
+# KVM paravirtualisation, virtio NICs, and disable unneeded devices to
+# minimise overhead and maximise compatibility in nested environments.
 # ============================================================================
 
 GITLAB_IP   = "192.168.56.10"
 PLATFORM_IP = "192.168.56.20"
 
+ENV["VAGRANT_DEFAULT_PROVIDER"] = "virtualbox"
+
 Vagrant.configure("2") do |config|
-  config.vm.box = "generic/ubuntu2204"
+  # bento boxes are purpose-built for Vagrant + VirtualBox and much more
+  # reliable than generic/* boxes when running under nested virtualisation.
+  config.vm.box = "bento/ubuntu-22.04"
   config.vm.box_check_update = false
-  config.vm.boot_timeout = 600
-  config.vm.synced_folder ".", "/vagrant", disabled: true
+  config.vm.boot_timeout = 900          # generous — nested virt is slower
+
+  # ── Shared VirtualBox defaults (nested-virt-safe) ─────────────────────────
+  config.vm.provider "virtualbox" do |vb|
+    vb.gui = false
+    vb.linked_clone = true              # faster clone, saves disk
+
+    # KVM paravirt provider — best perf for Linux guests and the safest
+    # option inside an already-virtualised host (avoids most Guru Meditation
+    # crashes caused by incomplete VT-x passthrough).
+    vb.customize ["modifyvm", :id, "--paravirtprovider", "kvm"]
+
+    # VMSVGA is the only graphics controller VirtualBox recommends for
+    # Linux; others can trigger Guru Meditation under nested virt.
+    vb.customize ["modifyvm", :id, "--graphicscontroller", "vmsvga"]
+    vb.customize ["modifyvm", :id, "--vram", "16"]
+
+    # Disable large-pages and VPID — these rely on second-level address
+    # translation features that often misbehave with nested hypervisors.
+    vb.customize ["modifyvm", :id, "--largepages", "off"]
+    vb.customize ["modifyvm", :id, "--vtxvpid", "off"]
+
+    # Strip unnecessary hardware to save resources and reduce surface area
+    # for nested-virt instability.
+    vb.customize ["modifyvm", :id, "--audio", "none"]
+    vb.customize ["modifyvm", :id, "--usb", "off"]
+    vb.customize ["modifyvm", :id, "--usbehci", "off"]
+
+    # virtio NICs — lower CPU overhead than the default e1000.
+    vb.customize ["modifyvm", :id, "--nictype1", "virtio"]
+    vb.customize ["modifyvm", :id, "--nictype2", "virtio"]
+  end
 
   # --------------------------------------------------------------------------
-  # VM2: GitLab (provisioned first so it's ready when platform-vm needs it)
+  # VM 1 — GitLab CE + Runner  (provisioned first)
+  # GitLab recommends ≥ 4 GB RAM; 2 CPUs keeps compile/reconfigure bearable.
   # --------------------------------------------------------------------------
   config.vm.define "gitlab-vm" do |gitlab|
     gitlab.vm.hostname = "mcauchyG"
     gitlab.vm.network "private_network", ip: GITLAB_IP
 
-    gitlab.vm.provider "libvirt" do |lv|
-      lv.memory = 4096
-      lv.cpus   = 4
+    gitlab.vm.provider "virtualbox" do |vb|
+      vb.name   = "iot-bonus-gitlab"
+      vb.memory = 4096
+      vb.cpus   = 2
     end
+
+    # Sync confs so the provision script can push manifests into GitLab
+    gitlab.vm.synced_folder "confs/", "/home/vagrant/confs"
 
     gitlab.vm.provision "shell",
       path: "scripts/gitlab/provision.sh",
-      env: {
-        "GITLAB_IP" => GITLAB_IP
-      }
+      env: { "GITLAB_IP" => GITLAB_IP }
   end
 
   # --------------------------------------------------------------------------
-  # VM1: Platform (k3s + Argo CD + dev workloads)
+  # VM 2 — Platform (k3s + Argo CD + dev workloads)
+  # 2 GB + 2 vCPUs is the practical minimum for k3s + Argo CD.
   # --------------------------------------------------------------------------
   config.vm.define "platform-vm" do |platform|
     platform.vm.hostname = "mcauchyP"
     platform.vm.network "private_network", ip: PLATFORM_IP
 
-    platform.vm.provider "libvirt" do |lv|
-      lv.memory = 2048
-      lv.cpus   = 2
+    platform.vm.provider "virtualbox" do |vb|
+      vb.name   = "iot-bonus-platform"
+      vb.memory = 2048
+      vb.cpus   = 2
     end
 
-    platform.vm.synced_folder "confs/", "/home/vagrant/confs", type: "rsync"
+    # VirtualBox shared folders work out of the box with bento boxes
+    # (Guest Additions pre-installed), no rsync needed.
+    platform.vm.synced_folder "confs/", "/home/vagrant/confs"
 
     platform.vm.provision "shell",
       path: "scripts/platform/provision.sh",

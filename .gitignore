@@ -22,3 +22,5 @@ iso/
 *.crt
 kubeconfig
 config
+# --- Packages ---
+*.deb
