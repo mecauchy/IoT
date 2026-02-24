@@ -1,0 +1,98 @@
+# =============================================================================
+# DEPLOYMENT TEMPLATE
+# =============================================================================
+# This template creates a Kubernetes Deployment resource.
+#
+# A Deployment ensures the specified number of pod replicas are running
+# and handles rolling updates when the image changes.
+#
+# When ArgoCD detects that image.tag changed from v1 to v2:
+# 1. It renders this template with new values
+# 2. Applies the change to the cluster
+# 3. Kubernetes performs a rolling update (new pods up, old pods down)
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  # Name generated from chart/release name
+  name: {{ include "playground.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "playground.labels" . | nindent 4 }}
+spec:
+  # Number of pod replicas
+  replicas: {{ .Values.replicaCount }}
+  
+  # Label selector - must match pod template labels
+  selector:
+    matchLabels:
+      {{- include "playground.selectorLabels" . | nindent 6 }}
+  
+  # Pod template specification
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "playground.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      
+      containers:
+        - name: {{ .Chart.Name }}
+          # Image: repository:tag (e.g., wil42/playground:v1)
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          
+          # Container port
+          ports:
+            - name: http
+              containerPort: 8888
+              protocol: TCP
+          
+          # Liveness probe - restart container if unhealthy
+          {{- if .Values.healthCheck.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.healthCheck.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.healthCheck.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthCheck.periodSeconds }}
+          
+          # Readiness probe - don't send traffic until ready
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.healthCheck.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.healthCheck.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthCheck.periodSeconds }}
+          {{- end }}
+          
+          # Resource limits and requests
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      
+      # Node placement constraints
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

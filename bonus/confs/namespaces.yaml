@@ -1,0 +1,44 @@
+# =============================================================================
+# KUBERNETES NAMESPACES
+# =============================================================================
+# Defines all namespaces used in this project.
+# Using a single file with kubectl apply is idempotent (safe to rerun).
+#
+# Namespaces provide isolation between:
+# - argocd: ArgoCD components
+# - gitlab: GitLab components  
+# - dev: Our deployed application
+# =============================================================================
+
+---
+# ArgoCD namespace - contains all ArgoCD resources
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+  labels:
+    name: argocd
+    project: iot-bonus
+    purpose: gitops-controller
+
+---
+# GitLab namespace - contains GitLab CE installation
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitlab
+  labels:
+    name: gitlab
+    project: iot-bonus
+    purpose: git-server
+
+---
+# Dev namespace - contains our deployed application
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
+  labels:
+    name: dev
+    project: iot-bonus
+    purpose: application

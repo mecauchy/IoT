@@ -1,0 +1,88 @@
+# =============================================================================
+# HELM CHART VALUES (Default Configuration)
+# =============================================================================
+# This file contains all configurable values for the chart.
+# 
+# TO UPDATE THE APPLICATION VERSION:
+# 1. Change image.tag from "v1" to "v2"
+# 2. Commit and push to GitLab
+# 3. ArgoCD will automatically detect and deploy the change
+#
+# These values can be overridden by:
+# - ArgoCD Application spec (helm.parameters)
+# - helm install -f custom-values.yaml
+# - helm install --set image.tag=v2
+# =============================================================================
+
+# Number of pod replicas
+replicaCount: 1
+
+# Container image configuration
+image:
+  # Image repository (Docker Hub in this case)
+  repository: wil42/playground
+  
+  # Image tag - CHANGE THIS TO UPDATE THE APP
+  # v1 = initial version
+  # v2 = updated version
+  tag: "v1"
+  
+  # Pull policy: Always = always pull (good for :latest tags)
+  # IfNotPresent = use local cache (faster, good for specific tags)
+  pullPolicy: IfNotPresent
+
+# Image pull secrets (for private registries)
+imagePullSecrets: []
+
+# Override chart name in resource names
+nameOverride: ""
+fullnameOverride: ""
+
+# Service configuration
+service:
+  # Service type: 
+  # - ClusterIP: Internal only
+  # - NodePort: Expose on node port (we use this)
+  # - LoadBalancer: Cloud provider LB
+  type: NodePort
+  
+  # Port the service listens on
+  port: 8888
+  
+  # NodePort to expose (must be in range 30000-32767)
+  # k3d maps host:8888 -> cluster:8888, which routes to this NodePort
+  nodePort: 30888
+
+# Container resource limits and requests
+resources:
+  limits:
+    cpu: 200m
+    memory: 128Mi
+  requests:
+    cpu: 100m
+    memory: 64Mi
+
+# Health checks
+healthCheck:
+  enabled: true
+  # HTTP endpoint for health checks
+  path: /
+  # Initial delay before first check
+  initialDelaySeconds: 10
+  # Time between checks
+  periodSeconds: 10
+
+# Pod labels (in addition to default labels)
+podLabels: {}
+
+# Pod annotations
+podAnnotations: {}
+
+# Node selector for pod placement
+nodeSelector: {}
+
+# Tolerations for taints
+tolerations: []
+
+# Pod affinity rules
+affinity: {}

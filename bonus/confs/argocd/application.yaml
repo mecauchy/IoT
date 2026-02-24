@@ -1,21 +1,98 @@
+# =============================================================================
+# ARGO CD APPLICATION CRD
+# =============================================================================
+# This Application resource tells ArgoCD to:
+# 1. Watch a Git repository (GitLab) for changes
+# 2. Deploy the Helm chart found at the specified path
+# 3. Automatically sync changes (GitOps workflow)
+#
+# Key features enabled:
+# - automated.prune: Remove resources that are no longer in Git
+# - automated.selfHeal: Revert manual changes to match Git state
+# - CreateNamespace: Automatically create target namespace
+#
+# When you push v1 -> v2 change to GitLab, ArgoCD will:
+# 1. Detect the change (polling every 3 minutes, or webhook)
+# 2. Compare desired state (Git) vs actual state (cluster)
+# 3. Automatically apply the difference
+# =============================================================================
+
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: project-mcauchy
-  namespace: argocd
+  name: playground-app
+  namespace: argocd  # ArgoCD apps must be in argocd namespace
+  labels:
+    project: iot-bonus
+  # Finalizer ensures proper cleanup when deleting
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
+  # Project defines RBAC policies (default allows everything)
   project: default
+  
+  # Source: Where to get the manifests
   source:
-    # GitLab self-hosted on VM2 (gitlab-vm)
-    repoURL: http://192.168.56.10/root/iot-manifests.git
+    # GitLab repository URL (HTTP for simplicity)
+    # REPLACE with your actual GitLab repo URL after setup
+    repoURL: http://gitlab-webservice-default.gitlab.svc.cluster.local:8181/root/iot-app.git
+    
+    # Branch/tag to track
     targetRevision: main
-    path: confs/dev
+    
+    # Path to Helm chart within the repository
+    path: helm-chart
+    
+    # Helm-specific configuration
+    helm:
+      # Values file to use (relative to chart path)
+      valueFiles:
+        - values.yaml
+      
+      # Override values directly (optional, for testing)
+      # parameters:
+      #   - name: image.tag
+      #     value: v2
+
+  # Destination: Where to deploy
   destination:
+    # In-cluster deployment (uses ServiceAccount)
     server: https://kubernetes.default.svc
     namespace: dev
+
+  # Sync Policy: How to handle changes
   syncPolicy:
+    # Automated sync - no manual intervention needed
     automated:
+      # prune: Delete resources that are no longer defined in Git
       prune: true
+      
+      # selfHeal: Revert manual changes made to the cluster
+      # If someone does: kubectl edit deployment
+      # ArgoCD will detect the drift and revert it
       selfHeal: true
+      
+      # Allow empty: proceed even if there are no resources to sync
+      allowEmpty: false
+    
+    # Sync options
     syncOptions:
-    - CreateNamespace=true
+      # Automatically create namespace if it doesn't exist
+      - CreateNamespace=true
+      
+      # Validate manifests before applying
+      - Validate=true
+      
+      # Replace resources instead of patching (safer for some resources)
+      - PrunePropagationPolicy=foreground
+      
+      # Apply out of sync only (performance optimization)
+      - ApplyOutOfSyncOnly=true
+    
+    # Retry failed syncs
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

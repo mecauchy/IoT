@@ -1,124 +1,188 @@
-# ============================================================================
-# Inception of Things — Bonus Part
-# Orchestrates sequential VM startup to avoid OOM on the host.
-#   1. gitlab-vm   (4 GB) — GitLab CE + repo setup
-#   2. platform-vm (2 GB) — k3s + Argo CD + syncs from GitLab
-# ============================================================================
+# =============================================================================
+# IoT BONUS - MAKEFILE
+# =============================================================================
+# This Makefile provides convenient shortcuts for all operations.
+#
+# Usage:
+#   make <target>
+#
+# Main workflow:
+#   1. make install-tools   # Install Docker, k3d, kubectl, Helm
+#   2. make setup           # Create cluster + install ArgoCD
+#   3. make gitlab          # Install GitLab (takes 5-10 min)
+#   4. make push-chart      # Push Helm chart to GitLab
+#   5. make configure       # Connect ArgoCD to GitLab
+#   6. make status          # Check everything is working
+#
+# Single command:
+#   make all                # Run complete setup (except GitLab config)
+# =============================================================================
 
-VAGRANT     := vagrant
-GITLAB_VM   := gitlab-vm
-PLATFORM_VM := platform-vm
-GITLAB_IP   := 192.168.56.10
-PLATFORM_IP := 192.168.56.20
+.PHONY: all install-tools setup gitlab configure cleanup status \
+        argocd-password gitlab-password push-chart port-forward help
 
-# Stamp files track what has already been done (idempotent re-runs).
-STAMP_DIR   := .stamps
-STAMP_GITLAB   := $(STAMP_DIR)/gitlab-up
-STAMP_PLATFORM := $(STAMP_DIR)/platform-up
+# Default target
+.DEFAULT_GOAL := help
 
-.PHONY: all gitlab platform clean destroy status test re help
+# Script directory
+SCRIPTS_DIR := scripts
+ARGOCD_PORT ?= 18080
+GITLAB_PORT ?= 8181
 
-# ── Default target ──────────────────────────────────────────────────────────
-all: gitlab platform ## Full deploy: gitlab-vm then platform-vm (sequential)
+# =============================================================================
+# MAIN TARGETS
+# =============================================================================
 
-# ── GitLab VM ───────────────────────────────────────────────────────────────
-gitlab: $(STAMP_GITLAB) ## Bring up gitlab-vm only
-
-$(STAMP_GITLAB):
-	@echo "\n======  Stage 1/2 — gitlab-vm  ======"
-	@echo "  RAM required : 4 GB"
-	@echo "  This will install GitLab CE, create the repo, and push manifests."
+## all: Complete setup (tools + cluster + ArgoCD + GitLab)
+all: install-tools setup gitlab
 	@echo ""
-	$(VAGRANT) up $(GITLAB_VM)
-	@echo "\n--- Verifying GitLab health ---"
-	@for i in $$(seq 1 30); do \
-		code=$$(curl -sf -o /dev/null -w '%{http_code}' http://$(GITLAB_IP)/-/health 2>/dev/null); \
-		if [ "$$code" = "200" ]; then echo "GitLab healthy (HTTP $$code)"; break; fi; \
-		echo "  waiting… (attempt $$i/30)"; sleep 10; \
-	done
-	@mkdir -p $(STAMP_DIR)
-	@touch $@
-	@echo "\n======  gitlab-vm ready  ======\n"
-
-# ── Platform VM ─────────────────────────────────────────────────────────────
-platform: $(STAMP_PLATFORM) ## Bring up platform-vm (requires gitlab-vm)
-
-$(STAMP_PLATFORM): $(STAMP_GITLAB)
-	@echo "\n======  Stage 2/2 — platform-vm  ======"
-	@echo "  RAM required : 2 GB"
-	@echo "  This will install k3s, Argo CD, and sync from GitLab."
+	@echo "=============================================="
+	@echo "  Installation Complete!"
+	@echo "=============================================="
 	@echo ""
-	$(VAGRANT) up $(PLATFORM_VM)
-	@mkdir -p $(STAMP_DIR)
-	@touch $@
-	@echo "\n======  platform-vm ready  ======\n"
-
-# ── Status ──────────────────────────────────────────────────────────────────
-status: ## Show VM status, host RAM, and service URLs
-	@echo "--- Vagrant status ---"
-	@$(VAGRANT) status
+	@echo "Next steps:"
+	@echo "  1. Access GitLab: make port-forward-gitlab"
+	@echo "  2. Create repo 'iot-app' in GitLab"
+	@echo "  3. Push chart: make push-chart"
+	@echo "  4. Configure: make configure"
 	@echo ""
-	@echo "--- Host memory ---"
-	@free -h | head -2
+
+## install-tools: Install Docker, k3d, kubectl, Helm
+install-tools:
+	@chmod +x $(SCRIPTS_DIR)/install-tools.sh
+	@$(SCRIPTS_DIR)/install-tools.sh
+
+## setup: Create k3d cluster and install ArgoCD
+setup:
+	@chmod +x $(SCRIPTS_DIR)/setup-cluster.sh
+	@$(SCRIPTS_DIR)/setup-cluster.sh
+
+## gitlab: Install GitLab CE in the cluster
+gitlab:
+	@chmod +x $(SCRIPTS_DIR)/install-gitlab.sh
+	@$(SCRIPTS_DIR)/install-gitlab.sh
+
+## configure: Configure ArgoCD to connect to GitLab
+configure:
+	@chmod +x $(SCRIPTS_DIR)/configure-argocd.sh
+	@$(SCRIPTS_DIR)/configure-argocd.sh
+
+## cleanup: Delete cluster and clean up resources
+cleanup:
+	@chmod +x $(SCRIPTS_DIR)/cleanup.sh
+	@$(SCRIPTS_DIR)/cleanup.sh
+
+# =============================================================================
+# UTILITY TARGETS
+# =============================================================================
+
+## status: Show status of all components
+status:
 	@echo ""
-	@echo "--- VirtualBox running VMs ---"
-	@VBoxManage list runningvms 2>/dev/null || echo "(none)"
+	@echo "=== Cluster ===" 
+	@k3d cluster list 2>/dev/null || echo "No clusters found"
 	@echo ""
-	@echo "--- Service URLs ---"
-	@printf "GitLab:   http://$(GITLAB_IP)       "; \
-	  curl -sf -o /dev/null -w "(HTTP %{http_code})\n" http://$(GITLAB_IP)/ 2>/dev/null || echo "(unreachable)"
-	@printf "ArgoCD:   https://$(PLATFORM_IP):30443  "; \
-	  curl -ksf -o /dev/null -w "(HTTP %{http_code})\n" https://$(PLATFORM_IP):30443/ 2>/dev/null || echo "(unreachable)"
-	@printf "App:      http://$(PLATFORM_IP):30888   "; \
-	  curl -sf -o /dev/null -w "(HTTP %{http_code})\n" http://$(PLATFORM_IP):30888/ 2>/dev/null || echo "(unreachable)"
-
-# ── Test the full pipeline ──────────────────────────────────────────────────
-test: ## Run end-to-end tests on the running VMs
-	@echo "=== Testing GitLab ==="
-	@curl -sf http://$(GITLAB_IP)/-/health && echo " [OK] GitLab health" || echo " [FAIL] GitLab health"
-	@curl -sf "http://$(GITLAB_IP)/api/v4/projects/root%2Fiot-manifests" | \
-	  python3 -c "import sys,json; p=json.load(sys.stdin); print(f' [OK] Repo: {p[\"path_with_namespace\"]} (id={p[\"id\"]})')" \
-	  2>/dev/null || echo " [FAIL] Repo root/iot-manifests not found"
+	@echo "=== Nodes ==="
+	@kubectl get nodes 2>/dev/null || echo "Cluster not accessible"
 	@echo ""
-	@echo "=== Testing Argo CD ==="
-	@curl -ksf https://$(PLATFORM_IP):30443/ -o /dev/null && echo " [OK] ArgoCD UI" || echo " [FAIL] ArgoCD UI"
-	@$(VAGRANT) ssh $(PLATFORM_VM) -c "\
-	  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; \
-	  echo ' ArgoCD app status:'; \
-	  kubectl get application project-mcauchy -n argocd -o jsonpath='  sync={.status.sync.status}  health={.status.health.status}' 2>/dev/null; echo; \
-	  echo ''; \
-	  echo ' Dev namespace pods:'; \
-	  kubectl get pods -n dev 2>/dev/null || echo '  (none)'; \
-	  echo ''; \
-	  echo ' Dev namespace services:'; \
-	  kubectl get svc -n dev 2>/dev/null || echo '  (none)'; \
-	" 2>/dev/null
+	@echo "=== Namespaces ==="
+	@kubectl get namespaces 2>/dev/null | grep -E "NAME|argocd|gitlab|dev" || true
 	@echo ""
-	@echo "=== Testing App endpoint ==="
-	@curl -sf http://$(PLATFORM_IP):30888/ -o /dev/null \
-	  && echo " [OK] App at http://$(PLATFORM_IP):30888" \
-	  || echo " [WARN] App not responding yet (image may still be pulling)"
+	@echo "=== ArgoCD Pods ==="
+	@kubectl get pods -n argocd 2>/dev/null || echo "ArgoCD not installed"
+	@echo ""
+	@echo "=== GitLab Pods ==="
+	@kubectl get pods -n gitlab 2>/dev/null || echo "GitLab not installed"
+	@echo ""
+	@echo "=== Dev Pods ==="
+	@kubectl get pods -n dev 2>/dev/null || echo "No app deployed"
+	@echo ""
+	@echo "=== ArgoCD Applications ==="
+	@kubectl get applications -n argocd 2>/dev/null || echo "No applications"
 
-# ── Rebuild from scratch ────────────────────────────────────────────────────
-re: destroy all ## Full rebuild: destroy everything then deploy
+## argocd-password: Get ArgoCD admin password
+argocd-password:
+	@echo "ArgoCD Admin Password:"
+	@kubectl -n argocd get secret argocd-initial-admin-secret \
+		-o jsonpath="{.data.password}" | base64 -d && echo ""
 
-# ── Cleanup ─────────────────────────────────────────────────────────────────
-clean: ## Remove stamp files (keeps VMs running)
-	rm -rf $(STAMP_DIR)
+## gitlab-password: Get GitLab root password
+gitlab-password:
+	@echo "GitLab Root Password: iotBonus2024!"
 
-destroy: ## Destroy all VMs and remove stamps
-	-$(VAGRANT) destroy $(PLATFORM_VM) -f 2>/dev/null
-	-$(VAGRANT) destroy $(GITLAB_VM) -f 2>/dev/null
-	rm -rf $(STAMP_DIR)
+## port-forward-gitlab: Forward GitLab port for browser access
+port-forward-gitlab:
+	@echo "GitLab will be available at: http://gitlab.localhost:$(GITLAB_PORT)"
+	@echo "Press Ctrl+C to stop"
+	@kubectl port-forward svc/gitlab-webservice-default $(GITLAB_PORT):8181 -n gitlab
 
-# ── SSH shortcuts ───────────────────────────────────────────────────────────
-ssh-gitlab: ## SSH into gitlab-vm
-	$(VAGRANT) ssh $(GITLAB_VM)
+## port-forward-argocd: Forward ArgoCD port for browser access
+port-forward-argocd:
+	@echo "ArgoCD will be available at: http://localhost:$(ARGOCD_PORT)"
+	@echo "Press Ctrl+C to stop"
+	@kubectl port-forward svc/argocd-server $(ARGOCD_PORT):80 -n argocd
 
-ssh-platform: ## SSH into platform-vm
-	$(VAGRANT) ssh $(PLATFORM_VM)
+## push-chart: Push the Helm chart to GitLab (interactive)
+push-chart:
+	@echo ""
+	@echo "To push the Helm chart to GitLab:"
+	@echo ""
+	@echo "1. Create a new project 'iot-app' in GitLab (http://gitlab.localhost:$(GITLAB_PORT))"
+	@echo ""
+	@echo "2. Clone and push the chart:"
+	@echo "   cd /tmp"
+	@echo "   git clone http://gitlab.localhost:$(GITLAB_PORT)/root/iot-app.git"
+	@echo "   cp -r $(PWD)/app-chart/* iot-app/"
+	@echo "   cd iot-app"
+	@echo "   git add ."
+	@echo "   git commit -m 'Initial commit - playground app v1'"
+	@echo "   git push origin main"
+	@echo ""
+	@echo "3. Then run: make configure"
+	@echo ""
 
-# ── Help ────────────────────────────────────────────────────────────────────
-help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
-	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+## app-logs: Show logs from the deployed application
+app-logs:
+	@kubectl logs -l app=playground -n dev --tail=50 -f 2>/dev/null || \
+		echo "No app pods found. Is the application deployed?"
+
+## app-version: Show current deployed version
+app-version:
+	@echo "Current deployed image:"
+	@kubectl get deployment -n dev -o jsonpath='{.items[*].spec.template.spec.containers[*].image}' 2>/dev/null || \
+		echo "No deployment found"
+	@echo ""
+
+## sync: Force ArgoCD to sync the application
+sync:
+	@echo "Forcing ArgoCD sync..."
+	@kubectl patch application playground-app -n argocd \
+		--type merge -p '{"operation": {"sync": {}}}' 2>/dev/null || \
+		echo "Application not found or sync failed"
+
+## test-app: Test the deployed application
+test-app:
+	@echo "Testing application on http://localhost:8888..."
+	@curl -s http://localhost:8888 2>/dev/null || echo "Application not accessible"
+
+# =============================================================================
+# HELP
+# =============================================================================
+
+## help: Show this help message
+help:
+	@echo ""
+	@echo "IoT Bonus - Makefile Targets"
+	@echo "============================"
+	@echo ""
+	@echo "MAIN WORKFLOW:"
+	@grep -E '^## ' $(MAKEFILE_LIST) | grep -E '(install-tools|setup|gitlab|configure|all):' | \
+		sed 's/## /  /' | sed 's/: /:\t/'
+	@echo ""
+	@echo "UTILITY:"
+	@grep -E '^## ' $(MAKEFILE_LIST) | grep -vE '(install-tools|setup|gitlab|configure|all|cleanup):' | \
+		grep -vE 'help:' | sed 's/## /  /' | sed 's/: /:\t/'
+	@echo ""
+	@echo "CLEANUP:"
+	@grep -E '^## cleanup:' $(MAKEFILE_LIST) | sed 's/## /  /' | sed 's/: /:\t/'
+	@echo ""

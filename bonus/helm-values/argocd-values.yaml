@@ -1,0 +1,78 @@
+# =============================================================================
+# ARGO CD HELM VALUES
+# =============================================================================
+# Custom values for ArgoCD Helm chart installation.
+# 
+# This configuration:
+# - Exposes ArgoCD server via NodePort for external access
+# - Disables TLS (we're running locally, handled by k3d)
+# - Enables insecure mode for easier local development
+# - Configures server for external access
+#
+# Helm chart: https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
+# =============================================================================
+
+# Global settings
+global:
+  # Add labels to all resources
+  additionalLabels:
+    project: iot-bonus
+
+# ArgoCD Server configuration
+server:
+  # Service type: NodePort allows external access through k3d port mapping
+  service:
+    type: NodePort
+    nodePortHttp: 30080  # ArgoCD UI will be accessible on this port
+  
+  # Run server in insecure mode (no TLS termination at ArgoCD level)
+  # Required for local development without certificates
+  extraArgs:
+    - --insecure
+  
+  # Ingress configuration (alternative to NodePort, disabled here)
+  ingress:
+    enabled: false
+
+# Redis HA is overkill for local development
+redis:
+  enabled: true
+
+# Disable HA for local development (saves resources)
+redis-ha:
+  enabled: false
+
+# Controller settings
+controller:
+  # Number of parallel application reconciliations
+  replicas: 1
+
+# Repo server settings (handles Git operations)
+repoServer:
+  replicas: 1
+
+# Application Set controller (for generating multiple apps)
+applicationSet:
+  replicas: 1
+
+# Notifications controller (for alerting)
+notifications:
+  enabled: false  # Not needed for this project
+
+# Dex (SSO) - disabled for simplicity
+dex:
+  enabled: false
+
+# ConfigMap settings for ArgoCD
+configs:
+  # Known hosts for SSH connections (will add GitLab later)
+  ssh:
+    extraHosts: ""
+  
+  # Repository credentials (configured separately via Secret)
+  repositories: {}
+  
+  # ConfigMap params
+  params:
+    # Allow insecure TLS for self-signed certificates (GitLab)
+    server.insecure: true

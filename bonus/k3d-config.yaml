@@ -1,0 +1,56 @@
+# =============================================================================
+# K3D CLUSTER CONFIGURATION
+# =============================================================================
+# This file defines the k3d cluster configuration for the IoT bonus project.
+# k3d creates a lightweight k3s cluster inside Docker containers.
+#
+# Key features:
+# - API server exposed on port 6443 for kubectl access
+# - Port 8080 mapped to ingress controller (HTTP traffic)
+# - Port 8888 mapped for our test application
+# - Port 8443 mapped for GitLab HTTPS
+# - One server node + one agent node (mimics production setup)
+# =============================================================================
+
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: iot-bonus  # Cluster name - use this with: kubectl config use-context k3d-iot-bonus
+
+# Cluster topology
+servers: 1  # Number of server (control-plane) nodes
+agents: 1   # Number of agent (worker) nodes
+
+# Kubernetes API server configuration
+kubeAPI:
+  host: "127.0.0.1"  # Listen on localhost only (security)
+  hostIP: "127.0.0.1"
+  hostPort: "6443"   # Standard Kubernetes API port
+
+# Port mappings: expose services outside the cluster
+# Format: "hostPort:containerPort@nodefilter"
+ports:
+  # HTTP ingress - ArgoCD UI and general ingress
+  - port: 8080:80
+    nodeFilters:
+      - loadbalancer
+  
+  # HTTPS ingress - GitLab HTTPS access
+  - port: 8443:443
+    nodeFilters:
+      - loadbalancer
+  
+  # Application port - our playground app
+  - port: 8888:8888
+    nodeFilters:
+      - loadbalancer
+
+# k3s specific options
+options:
+  k3s:
+    extraArgs:
+      # Disable traefik to free port 80/443 for our use
+      # We'll use k3d's built-in loadbalancer instead
+      - arg: "--disable=traefik"
+        nodeFilters:
+          - server:*

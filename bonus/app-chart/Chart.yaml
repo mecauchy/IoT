@@ -1,0 +1,54 @@
+# =============================================================================
+# HELM CHART METADATA
+# =============================================================================
+# This file defines the Helm chart for our playground application.
+# 
+# This chart will be stored in GitLab and deployed by ArgoCD.
+# When you change version or image.tag and push to GitLab,
+# ArgoCD will automatically deploy the new version.
+#
+# Helm charts follow a standard structure:
+# - Chart.yaml: Metadata (this file)
+# - values.yaml: Default configuration values
+# - templates/: Kubernetes manifest templates
+# =============================================================================
+
+apiVersion: v2
+
+# Chart name - used for helm install <name>
+name: playground-app
+
+# Human-readable description
+description: |
+  A Helm chart for the IoT Playground application.
+  Deploys a simple web application (wil42/playground) 
+  with configurable version (v1 or v2).
+
+# Chart type: application (deployable) vs library (reusable)
+type: application
+
+# Chart version - increment when chart structure changes
+# This is NOT the application version
+version: 0.1.0
+
+# Application version - the version of the app being deployed
+# This should match the image tag for clarity
+appVersion: "v1"
+
+# Maintainers (for documentation)
+maintainers:
+  - name: mcauchy
+    email: mcauchy@student.42.fr
+
+# Keywords for searchability
+keywords:
+  - iot
+  - playground
+  - demo
+
+# Home page (optional)
+home: https://github.com/42
+
+# Sources (optional)
+sources:
+  - https://gitlab.localhost/root/iot-app

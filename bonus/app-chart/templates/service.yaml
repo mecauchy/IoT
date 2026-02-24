@@ -1,0 +1,38 @@
+# =============================================================================
+# SERVICE TEMPLATE
+# =============================================================================
+# This template creates a Kubernetes Service resource.
+#
+# A Service provides a stable endpoint to access pods.
+# It load-balances traffic across all pods matching the selector labels.
+#
+# We use NodePort type which:
+# 1. Allocates a port on every node (30888)
+# 2. k3d's loadbalancer forwards host:8888 to this port
+# 3. Users can access the app at http://localhost:8888
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "playground.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "playground.labels" . | nindent 4 }}
+spec:
+  # Service type: NodePort for external access through k3d
+  type: {{ .Values.service.type }}
+  
+  # Ports configuration
+  ports:
+    - port: {{ .Values.service.port }}        # Service port (internal)
+      targetPort: http                         # Container port (name from deployment)
+      protocol: TCP
+      name: http
+      {{- if eq .Values.service.type "NodePort" }}
+      nodePort: {{ .Values.service.nodePort }} # External port on node
+      {{- end }}
+  
+  # Pod selector - must match deployment labels
+  selector:
+    {{- include "playground.selectorLabels" . | nindent 4 }}

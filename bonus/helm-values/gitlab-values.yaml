@@ -1,0 +1,173 @@
+# =============================================================================
+# GITLAB HELM VALUES (Minimal Local Configuration)
+# =============================================================================
+# Custom values for GitLab Helm chart installation.
+#
+# This is a MINIMAL configuration optimized for:
+# - Local development on limited resources
+# - Single-node k3d cluster
+# - Quick startup time
+# - Acting as Git source for ArgoCD
+#
+# WARNING: This config is NOT suitable for production!
+# Many features are disabled to reduce resource usage.
+#
+# Helm chart: https://docs.gitlab.com/charts/
+# =============================================================================
+
+# Global GitLab settings
+global:
+  # Edition: CE (Community Edition) is free and sufficient
+  edition: ce
+  
+  # Hosts configuration - use localhost for local development
+  hosts:
+    domain: localhost
+    https: false
+    gitlab:
+      name: gitlab.localhost
+    registry:
+      name: registry.localhost
+    minio:
+      name: minio.localhost
+  
+  # Ingress configuration
+  ingress:
+    class: none
+    configureCertmanager: false
+    tls:
+      enabled: false
+  
+  # Shell (SSH) access
+  shell:
+    port: 32022  # NodePort for SSH access to GitLab
+  
+  # Time zone
+  time_zone: UTC
+
+  # GitLab Rails settings
+  initialRootPassword:
+    # Secret name containing root password (we'll create this)
+    secret: gitlab-initial-root-password
+    key: password
+
+  # Email settings (disabled for local dev)
+  email:
+    display_name: GitLab
+    from: gitlab@localhost
+    reply_to: noreply@localhost
+  
+  smtp:
+    enabled: false
+
+  # Grafana disabled (monitoring not needed locally)
+  grafana:
+    enabled: false
+
+# =============================================================================
+# COMPONENT CONFIGURATION
+# =============================================================================
+
+# GitLab CE (core application)
+gitlab:
+  # Webservice (Rails application)
+  webservice:
+    # Minimal replicas for local dev
+    minReplicas: 1
+    maxReplicas: 1
+    resources:
+      limits:
+        cpu: 1500m
+        memory: 3Gi
+      requests:
+        cpu: 300m
+        memory: 1.5Gi
+  
+  # Sidekiq (background jobs)
+  sidekiq:
+    minReplicas: 1
+    maxReplicas: 1
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1.5Gi
+      requests:
+        cpu: 100m
+        memory: 768Mi
+  
+  # GitLab Shell (SSH access)
+  gitlab-shell:
+    minReplicas: 1
+    maxReplicas: 1
+  
+  # GitLab Exporter (metrics)
+  gitlab-exporter:
+    enabled: false
+  
+  # Toolbox (maintenance tasks)
+  toolbox:
+    enabled: true
+    replicas: 1
+
+# Gitaly (Git storage backend) - REQUIRED
+gitaly:
+  persistence:
+    size: 5Gi
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 512Mi
+
+# =============================================================================
+# DISABLED COMPONENTS (to save resources)
+# =============================================================================
+
+# Nginx Ingress - disabled (using k3d loadbalancer)
+nginx-ingress:
+  enabled: false
+
+# Cert-manager is not installed by this chart in this setup.
+
+# Prometheus - disabled (monitoring not needed)
+prometheus:
+  install: false
+
+# GitLab Runner - disabled (CI/CD not needed for this project)
+gitlab-runner:
+  install: false
+
+# Container Registry - disabled (not needed)
+registry:
+  enabled: false
+
+# Minio (object storage) - use internal
+minio:
+  persistence:
+    size: 5Gi
+
+# PostgreSQL database
+postgresql:
+  persistence:
+    size: 5Gi
+  primary:
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 100m
+        memory: 512Mi
+
+# Redis cache
+redis:
+  master:
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 50m
+        memory: 128Mi
